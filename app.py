@@ -4,6 +4,18 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import os
+
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # =========================
 # HELPER: BILINGUAL TEXT (STACKED)
@@ -122,23 +134,26 @@ def load_data(files):
     return df
 
 # =========================
-# PDF GENERATION HELPER (INCLUDES PLOTLY CHARTS & ANALYSIS)
+# PDF GENERATION HELPER (FIXED FONT & MATPLOTLIB CHART)
 # =========================
 def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top_facility, top_defect, analysis_text, df_filtered):
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    import os
-
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     
+    # Đăng ký font hỗ trợ tiếng Việt (DejaVuSans) từ matplotlib
+    try:
+        font_path = fm.findfont(fm.FontProperties(family='DejaVu Sans'))
+        pdfmetrics.registerFont(TTFont('UnicodeFont', font_path))
+        font_name = 'UnicodeFont'
+    except Exception:
+        font_name = 'Helvetica'
+
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'ReportTitle',
         parent=styles['Heading1'],
+        fontName=font_name,
         fontSize=16,
         textColor=colors.HexColor('#1f77b4'),
         spaceAfter=10
@@ -146,6 +161,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     heading_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
+        fontName=font_name,
         fontSize=12,
         textColor=colors.HexColor('#333333'),
         spaceBefore=10,
@@ -154,6 +170,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     body_style = ParagraphStyle(
         'ReportBody',
         parent=styles['Normal'],
+        fontName=font_name,
         fontSize=9,
         leading=12,
         textColor=colors.HexColor('#444444')
@@ -176,7 +193,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f5f5f5')),
         ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#333333')),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('FONTNAME', (0,0), (-1,-1), font_name),
         ('FONTSIZE', (0,0), (-1,-1), 8),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('TOPPADDING', (0,0), (-1,-1), 6),
@@ -186,19 +203,28 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    # Generate Chart Image for PDF
+    # Generate Chart Image using Matplotlib (ổn định, không phụ thuộc kaleido)
     chart_path = "temp_chart.png"
     try:
         df_trend = df_filtered.groupby(df_filtered['COMPLAIN_DATE'].dt.date).agg(Complains=('WO_NUM', 'count')).reset_index()
-        fig = px.bar(df_trend, x='COMPLAIN_DATE', y='Complains', title="Complains Trend / Xu hướng khiếu nại")
-        fig.update_layout(height=200, width=500, margin=dict(l=20, r=20, t=30, b=20))
-        fig.write_image(chart_path)
+        
+        plt.figure(figsize=(6.5, 2.5))
+        plt.plot(df_trend['COMPLAIN_DATE'], df_trend['Complains'], marker='o', color='#1f77b4', linewidth=2)
+        plt.title("Complains Trend / Xu hướng khiếu nại", fontsize=10, fontname='DejaVu Sans' if font_name=='UnicodeFont' else 'sans-serif')
+        plt.xlabel("Date", fontsize=8)
+        plt.ylabel("Complains", fontsize=8)
+        plt.xticks(rotation=30, fontsize=7)
+        plt.yticks(fontsize=8)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(chart_path, dpi=150)
+        plt.close()
         
         story.append(Paragraph("Analytics Chart / Biểu đồ phân tích", heading_style))
-        story.append(Image(chart_path, width=450, height=180))
+        story.append(Image(chart_path, width=480, height=180))
         story.append(Spacer(1, 10))
-    except Exception:
-        pass # Fallback nếu môi trường thiếu engine ảnh tĩnh của plotly
+    except Exception as e:
+        print(f"Chart generation error: {e}")
 
     # Analysis Section
     story.append(Paragraph("Root Cause & Recommendations / Nguyên nhân gốc rễ & Giải pháp đề xuất", heading_style))
@@ -447,7 +473,6 @@ if uploaded_files:
                     sample_df = df_filtered.head(120)
                     sample_data = sample_df.to_markdown(index=False)
 
-                    # Prompt không chứa lời dẫn mở đầu, yêu cầu trả cấu trúc song ngữ trực tiếp từng dòng/đoạn
                     prompt = f"""
 Analyze the provided QA/QC dataset and metrics. Do not include any introductory remarks, greetings, or meta-commentary. Jump straight into the core findings.
 For every single point, output the English version first, followed immediately by the Vietnamese translation on the next line.
@@ -464,7 +489,7 @@ DATA EVIDENCE:
 """
 
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-2.5-pro",
                         contents=prompt
                     )
 
@@ -494,5 +519,5 @@ DATA EVIDENCE:
                 mime="application/pdf"
             )
 
-        st.markdown(tr("### 📋 Data Table", "### 📋 Bảng dữ liệu"))
+        st.markdown("### 📋 Data Table", "### 📋 Bảng dữ liệu")
         st.dataframe(df_filtered, use_container_width=True)
