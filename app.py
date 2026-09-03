@@ -158,8 +158,8 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         fontSize=15,
         textColor=colors.HexColor('#1f77b4'),
         spaceAfter=4,
-        alignment=1 # Center
-    } if 'alignment' in dir() else ParagraphStyle('ReportTitle', parent=styles['Heading1'], fontName=font_name, fontSize=15, textColor=colors.HexColor('#1f77b4'), spaceAfter=4)
+        alignment=1
+    )
     
     subtitle_style = ParagraphStyle(
         'ReportSubTitle',
@@ -220,10 +220,9 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     temp_files = []
 
     try:
-        # Style chung cho matplotlib khớp Plotly White template
         plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
         
-        # --- CHART 1: Trend of Complains & NG Qty over Time ---
+        # CHART 1: Trend of Complains & NG Qty over Time
         chart1_path = "temp_chart1.png"
         temp_files.append(chart1_path)
         df_trend = df_filtered.groupby(df_filtered['COMPLAIN_DATE'].dt.date).agg(
@@ -232,18 +231,17 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         ).reset_index()
 
         fig, ax1 = plt.subplots(figsize=(6.5, 2.2), dpi=150)
-        
         color = '#1f77b4'
         ax1.set_xlabel('Date / Ngày', fontsize=7)
         ax1.set_ylabel('Complains / Số KN', color=color, fontsize=7)
-        line1 = ax1.plot(df_trend['COMPLAIN_DATE'], df_trend['Complains'], color=color, marker='o', linewidth=1.5, label='Complains')
+        ax1.plot(df_trend['COMPLAIN_DATE'], df_trend['Complains'], color=color, marker='o', linewidth=1.5, label='Complains')
         ax1.tick_params(axis='y', labelcolor=color, labelsize=7)
         ax1.tick_params(axis='x', rotation=20, labelsize=7)
 
         ax2 = ax1.twinx()  
         color = '#ff7f0e'
         ax2.set_ylabel('NG Quantity / Số lượng lỗi', color=color, fontsize=7)
-        line2 = ax2.plot(df_trend['COMPLAIN_DATE'], df_trend['Total_NG'], color=color, marker='s', linewidth=1.5, linestyle='--', label='NG Qty')
+        ax2.plot(df_trend['COMPLAIN_DATE'], df_trend['Total_NG'], color=color, marker='s', linewidth=1.5, linestyle='--', label='NG Qty')
         ax2.tick_params(axis='y', labelcolor=color, labelsize=7)
         ax2.grid(False)
 
@@ -255,12 +253,11 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(Image(chart1_path, width=490, height=160))
         story.append(Spacer(1, 6))
 
-        # --- CHART 2 & 3: Defect Share (Pie) & Facility Defect (Stacked Bar) ---
+        # CHART 2 & 3: Defect Share (Pie) & Facility Defect (Stacked Bar)
         chart2_path = "temp_chart2.png"
         chart3_path = "temp_chart3.png"
         temp_files.extend([chart2_path, chart3_path])
 
-        # Chart 2: Defect Type Share (Pie)
         df_defect_share = df_filtered.groupby('TYPE_OF_DEFECT').size().reset_index(name='Count')
         fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
         colors_list = plt.cm.Paired(np.linspace(0, 1, len(df_defect_share)))
@@ -271,7 +268,6 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         plt.savefig(chart2_path, dpi=150, bbox_inches='tight')
         plt.close()
 
-        # Chart 3: Complains by Facility & Defect Type (Stacked Bar)
         df_facility_defect = df_filtered.groupby(['FACILITY', 'TYPE_OF_DEFECT']).size().unstack(fill_value=0)
         fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
         df_facility_defect.plot(kind='bar', stacked=True, ax=ax, colormap='tab10', width=0.6)
@@ -285,7 +281,6 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         plt.savefig(chart3_path, dpi=150, bbox_inches='tight')
         plt.close()
 
-        # Đặt 2 biểu đồ cạnh nhau trong một bảng ReportLab
         chart_table_1 = Table([
             [Image(chart2_path, width=235, height=150), Image(chart3_path, width=245, height=150)]
         ], colWidths=[245, 245])
@@ -298,7 +293,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(chart_table_1)
         story.append(Spacer(1, 6))
 
-        # --- CHART 4: NG Quantity by Facility (Horizontal Bar) ---
+        # CHART 4: NG Quantity by Facility (Horizontal Bar)
         chart4_path = "temp_chart4.png"
         temp_files.append(chart4_path)
         df_facility_ng = df_filtered.groupby('FACILITY')['NG_QTY'].sum().reset_index(name='Total_NG').sort_values(by='Total_NG', ascending=True)
