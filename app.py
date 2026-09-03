@@ -8,10 +8,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import numpy as np
 import os
 
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
@@ -134,11 +135,11 @@ def load_data(files):
     return df
 
 # =========================
-# PDF GENERATION HELPER (FIXED FONT & MATPLOTLIB CHART)
+# PDF GENERATION HELPER (ALL 4 CHARTS MATCHING DASHBOARD)
 # =========================
 def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top_facility, top_defect, analysis_text, df_filtered):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     
     # Đăng ký font hỗ trợ tiếng Việt (DejaVuSans) từ matplotlib
@@ -154,32 +155,44 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         'ReportTitle',
         parent=styles['Heading1'],
         fontName=font_name,
-        fontSize=16,
+        fontSize=15,
         textColor=colors.HexColor('#1f77b4'),
-        spaceAfter=10
+        spaceAfter=4,
+        alignment=1 # Center
+    } if 'alignment' in dir() else ParagraphStyle('ReportTitle', parent=styles['Heading1'], fontName=font_name, fontSize=15, textColor=colors.HexColor('#1f77b4'), spaceAfter=4)
+    
+    subtitle_style = ParagraphStyle(
+        'ReportSubTitle',
+        parent=styles['Normal'],
+        fontName=font_name,
+        fontSize=9,
+        textColor=colors.HexColor('#666666'),
+        spaceAfter=10,
+        alignment=1
     )
+
     heading_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
         fontName=font_name,
-        fontSize=12,
-        textColor=colors.HexColor('#333333'),
-        spaceBefore=10,
-        spaceAfter=4
+        fontSize=11,
+        textColor=colors.HexColor('#222222'),
+        spaceBefore=12,
+        spaceAfter=6
     )
     body_style = ParagraphStyle(
         'ReportBody',
         parent=styles['Normal'],
         fontName=font_name,
-        fontSize=9,
-        leading=12,
+        fontSize=8.5,
+        leading=11,
         textColor=colors.HexColor('#444444')
     )
 
     # Title
     story.append(Paragraph("CUSTOMER COMPLAIN & QA/QC ANALYSIS REPORT", title_style))
-    story.append(Paragraph("BÁO CÁO PHÂN TÍCH KHIẾU NẠI KHÁCH HÀNG & QA/QC", body_style))
-    story.append(Spacer(1, 8))
+    story.append(Paragraph("BÁO CÁO PHÂN TÍCH KHIẾU NẠI KHÁCH HÀNG & QA/QC", subtitle_style))
+    story.append(Spacer(1, 4))
 
     # KPI Table
     kpi_data = [
@@ -188,41 +201,121 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         ['Top Facility / NM chính', str(top_facility), 'Top Defect / Lỗi phổ biến', str(top_defect)]
     ]
     
-    kpi_table = Table(kpi_data, colWidths=[140, 130, 140, 130])
+    kpi_table = Table(kpi_data, colWidths=[140, 120, 140, 124])
     kpi_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f5f5f5')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8f9fa')),
         ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#333333')),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
         ('FONTNAME', (0,0), (-1,-1), font_name),
         ('FONTSIZE', (0,0), (-1,-1), 8),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd'))
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e0e0e0'))
     ]))
-    
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    # Generate Chart Image using Matplotlib (ổn định, không phụ thuộc kaleido)
-    chart_path = "temp_chart.png"
+    story.append(Paragraph("Visual Analytics Dashboard / Phân tích trực quan", heading_style))
+
+    temp_files = []
+
     try:
-        df_trend = df_filtered.groupby(df_filtered['COMPLAIN_DATE'].dt.date).agg(Complains=('WO_NUM', 'count')).reset_index()
+        # Style chung cho matplotlib khớp Plotly White template
+        plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
         
-        plt.figure(figsize=(6.5, 2.5))
-        plt.plot(df_trend['COMPLAIN_DATE'], df_trend['Complains'], marker='o', color='#1f77b4', linewidth=2)
-        plt.title("Complains Trend / Xu hướng khiếu nại", fontsize=10, fontname='DejaVu Sans' if font_name=='UnicodeFont' else 'sans-serif')
-        plt.xlabel("Date", fontsize=8)
-        plt.ylabel("Complains", fontsize=8)
-        plt.xticks(rotation=30, fontsize=7)
-        plt.yticks(fontsize=8)
-        plt.grid(True, linestyle='--', alpha=0.5)
+        # --- CHART 1: Trend of Complains & NG Qty over Time ---
+        chart1_path = "temp_chart1.png"
+        temp_files.append(chart1_path)
+        df_trend = df_filtered.groupby(df_filtered['COMPLAIN_DATE'].dt.date).agg(
+            Complains=('WO_NUM', 'count'),
+            Total_NG=('NG_QTY', 'sum')
+        ).reset_index()
+
+        fig, ax1 = plt.subplots(figsize=(6.5, 2.2), dpi=150)
+        
+        color = '#1f77b4'
+        ax1.set_xlabel('Date / Ngày', fontsize=7)
+        ax1.set_ylabel('Complains / Số KN', color=color, fontsize=7)
+        line1 = ax1.plot(df_trend['COMPLAIN_DATE'], df_trend['Complains'], color=color, marker='o', linewidth=1.5, label='Complains')
+        ax1.tick_params(axis='y', labelcolor=color, labelsize=7)
+        ax1.tick_params(axis='x', rotation=20, labelsize=7)
+
+        ax2 = ax1.twinx()  
+        color = '#ff7f0e'
+        ax2.set_ylabel('NG Quantity / Số lượng lỗi', color=color, fontsize=7)
+        line2 = ax2.plot(df_trend['COMPLAIN_DATE'], df_trend['Total_NG'], color=color, marker='s', linewidth=1.5, linestyle='--', label='NG Qty')
+        ax2.tick_params(axis='y', labelcolor=color, labelsize=7)
+        ax2.grid(False)
+
+        plt.title("Trend of Complains & NG Qty over Time / Xu hướng khiếu nại & số lượng lỗi", fontsize=8, fontweight='bold', fontname='DejaVu Sans' if font_name=='UnicodeFont' else 'sans-serif')
         plt.tight_layout()
-        plt.savefig(chart_path, dpi=150)
+        plt.savefig(chart1_path, dpi=150, bbox_inches='tight')
         plt.close()
+
+        story.append(Image(chart1_path, width=490, height=160))
+        story.append(Spacer(1, 6))
+
+        # --- CHART 2 & 3: Defect Share (Pie) & Facility Defect (Stacked Bar) ---
+        chart2_path = "temp_chart2.png"
+        chart3_path = "temp_chart3.png"
+        temp_files.extend([chart2_path, chart3_path])
+
+        # Chart 2: Defect Type Share (Pie)
+        df_defect_share = df_filtered.groupby('TYPE_OF_DEFECT').size().reset_index(name='Count')
+        fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
+        colors_list = plt.cm.Paired(np.linspace(0, 1, len(df_defect_share)))
+        ax.pie(df_defect_share['Count'], labels=df_defect_share['TYPE_OF_DEFECT'], colors=colors_list, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 6})
+        ax.axis('equal')
+        plt.title("Defect Type Share / Tỷ lệ loại lỗi", fontsize=8, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(chart2_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        # Chart 3: Complains by Facility & Defect Type (Stacked Bar)
+        df_facility_defect = df_filtered.groupby(['FACILITY', 'TYPE_OF_DEFECT']).size().unstack(fill_value=0)
+        fig, ax = plt.subplots(figsize=(3.2, 2.2), dpi=150)
+        df_facility_defect.plot(kind='bar', stacked=True, ax=ax, colormap='tab10', width=0.6)
+        ax.set_title("Complains by Facility & Defect", fontsize=8, fontweight='bold')
+        ax.set_xlabel("Facility / Nhà máy", fontsize=7)
+        ax.set_ylabel("Complains", fontsize=7)
+        ax.tick_params(axis='x', rotation=15, labelsize=7)
+        ax.tick_params(axis='y', labelsize=7)
+        ax.legend(fontsize=5, title="Defect", title_fontsize=6, bbox_to_anchor=(1.02, 1), loc='upper left')
+        plt.tight_layout()
+        plt.savefig(chart3_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        # Đặt 2 biểu đồ cạnh nhau trong một bảng ReportLab
+        chart_table_1 = Table([
+            [Image(chart2_path, width=235, height=150), Image(chart3_path, width=245, height=150)]
+        ], colWidths=[245, 245])
+        chart_table_1.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(chart_table_1)
+        story.append(Spacer(1, 6))
+
+        # --- CHART 4: NG Quantity by Facility (Horizontal Bar) ---
+        chart4_path = "temp_chart4.png"
+        temp_files.append(chart4_path)
+        df_facility_ng = df_filtered.groupby('FACILITY')['NG_QTY'].sum().reset_index(name='Total_NG').sort_values(by='Total_NG', ascending=True)
         
-        story.append(Paragraph("Analytics Chart / Biểu đồ phân tích", heading_style))
-        story.append(Image(chart_path, width=480, height=180))
-        story.append(Spacer(1, 10))
+        fig, ax = plt.subplots(figsize=(6.5, 2.0), dpi=150)
+        ax.barh(df_facility_ng['FACILITY'], df_facility_ng['Total_NG'], color='#2ca02c', height=0.5)
+        ax.set_title("NG Quantity by Facility / Tổng lỗi NG theo nhà máy", fontsize=8, fontweight='bold')
+        ax.set_xlabel("Total NG Qty", fontsize=7)
+        ax.set_ylabel("Facility", fontsize=7)
+        ax.tick_params(axis='both', labelsize=7)
+        plt.tight_layout()
+        plt.savefig(chart4_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        story.append(Image(chart4_path, width=490, height=140))
+        story.append(Spacer(1, 8))
+
     except Exception as e:
         print(f"Chart generation error: {e}")
 
@@ -238,11 +331,12 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     doc.build(story)
     buffer.seek(0)
     
-    if os.path.exists(chart_path):
-        try:
-            os.remove(chart_path)
-        except:
-            pass
+    for p in temp_files:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except:
+                pass
 
     return buffer.getvalue()
 
