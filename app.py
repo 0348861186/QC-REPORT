@@ -253,14 +253,28 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(Image(chart1_path, width=490, height=150))
         story.append(Spacer(1, 4))
 
-        # CHART 2: Defect Share (Pie) - Đứng riêng 1 dòng hoặc tối ưu kích thước
+        # CHART 2: Defect Share (Pie) - Giảm kích thước chữ cho các nhãn và phần trăm
         chart2_path = "temp_chart2.png"
         temp_files.append(chart2_path)
         df_defect_share = df_filtered.groupby('TYPE_OF_DEFECT').size().reset_index(name='Count')
         
         fig, ax = plt.subplots(figsize=(6.5, 2.0), dpi=150)
         colors_list = plt.cm.Paired(np.linspace(0, 1, len(df_defect_share)))
-        ax.pie(df_defect_share['Count'], labels=df_defect_share['TYPE_OF_DEFECT'], colors=colors_list, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 6.5, 'fontname': 'DejaVu Sans'})
+        
+        # Giảm textprops và điều chỉnh labledistance nếu cần để các nhãn không bị dính vào viền
+        wedges, texts, autotexts = ax.pie(
+            df_defect_share['Count'], 
+            labels=df_defect_share['TYPE_OF_DEFECT'], 
+            colors=colors_list, 
+            autopct='%1.1f%%', 
+            startangle=90, 
+            textprops={'fontsize': 5.5, 'fontname': 'DejaVu Sans'}
+        )
+        
+        # Thu nhỏ thêm phần trăm hiển thị bên trong miếng bánh nếu muốn
+        for autotext in autotexts:
+            autotext.set_fontsize(5.0)
+
         ax.axis('equal')
         plt.title("Defect Type Share / Tỷ lệ loại lỗi", fontsize=7.5, fontweight='bold', fontname='DejaVu Sans')
         plt.tight_layout()
