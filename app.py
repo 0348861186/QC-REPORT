@@ -194,10 +194,10 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     story.append(Paragraph("BÁO CÁO PHÂN TÍCH KHIẾU NẠI KHÁCH HÀNG & QA/QC", subtitle_style))
     story.append(Spacer(1, 2))
 
-    # KPI Table
+    # KPI Table (Đã chuyển đơn vị sang pcs)
     kpi_data = [
         ['Total Complains / Tổng KN', str(total_complains), 'Defect Rate / Tỷ lệ lỗi', f"{defect_rate:.2f}%"],
-        ['Total NG / Tổng NG', str(int(total_ng)), 'Total Order / Tổng đặt', str(int(total_order))],
+        ['Total NG / Tổng NG', f"{int(total_ng):,} pcs", 'Total Order / Tổng đặt', f"{int(total_order):,} pcs"],
         ['Top Facility / NM chính', str(top_facility), 'Top Defect / Lỗi phổ biến', str(top_defect)]
     ]
     
@@ -240,7 +240,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
 
         ax2 = ax1.twinx()  
         color = '#ff7f0e'
-        ax2.set_ylabel('NG Quantity / Số lượng lỗi', color=color, fontsize=7, fontname='DejaVu Sans')
+        ax2.set_ylabel('NG Quantity / Số lượng lỗi (pcs)', color=color, fontsize=7, fontname='DejaVu Sans')
         ax2.plot(df_trend['COMPLAIN_DATE'], df_trend['Total_NG'], color=color, marker='s', linewidth=1.2, linestyle='--', label='NG Qty')
         ax2.tick_params(axis='y', labelcolor=color, labelsize=6.5)
         ax2.grid(False)
@@ -253,7 +253,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(Image(chart1_path, width=490, height=150))
         story.append(Spacer(1, 4))
 
-        # CHART 2: Defect Share (Pie) - Giảm kích thước chữ cho các nhãn và phần trăm
+        # CHART 2: Defect Share (Pie)
         chart2_path = "temp_chart2.png"
         temp_files.append(chart2_path)
         df_defect_share = df_filtered.groupby('TYPE_OF_DEFECT').size().reset_index(name='Count')
@@ -261,7 +261,6 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         fig, ax = plt.subplots(figsize=(6.5, 2.0), dpi=150)
         colors_list = plt.cm.Paired(np.linspace(0, 1, len(df_defect_share)))
         
-        # Giảm textprops và điều chỉnh labledistance nếu cần để các nhãn không bị dính vào viền
         wedges, texts, autotexts = ax.pie(
             df_defect_share['Count'], 
             labels=df_defect_share['TYPE_OF_DEFECT'], 
@@ -271,7 +270,6 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
             textprops={'fontsize': 5.5, 'fontname': 'DejaVu Sans'}
         )
         
-        # Thu nhỏ thêm phần trăm hiển thị bên trong miếng bánh nếu muốn
         for autotext in autotexts:
             autotext.set_fontsize(5.0)
 
@@ -284,7 +282,7 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(Image(chart2_path, width=490, height=150))
         story.append(Spacer(1, 4))
 
-        # CHART 3: Facility & Defect (Stacked Bar - Cho ra hẳn chiều rộng lớn 6.5 inches để không bị đè chữ và tràn legend)
+        # CHART 3: Facility & Defect
         chart3_path = "temp_chart3.png"
         temp_files.append(chart3_path)
         df_facility_defect = df_filtered.groupby(['FACILITY', 'TYPE_OF_DEFECT']).size().unstack(fill_value=0)
@@ -304,15 +302,15 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
         story.append(Image(chart3_path, width=490, height=160))
         story.append(Spacer(1, 4))
 
-        # CHART 4: NG Quantity by Facility (Horizontal Bar)
+        # CHART 4: NG Quantity by Facility
         chart4_path = "temp_chart4.png"
         temp_files.append(chart4_path)
         df_facility_ng = df_filtered.groupby('FACILITY')['NG_QTY'].sum().reset_index(name='Total_NG').sort_values(by='Total_NG', ascending=True)
         
         fig, ax = plt.subplots(figsize=(6.5, 2.0), dpi=150)
         ax.barh(df_facility_ng['FACILITY'], df_facility_ng['Total_NG'], color='#2ca02c', height=0.5)
-        ax.set_title("NG Quantity by Facility / Tổng lỗi NG theo nhà máy", fontsize=7.5, fontweight='bold', fontname='DejaVu Sans')
-        ax.set_xlabel("Total NG Qty / Tổng số lượng NG", fontsize=7, fontname='DejaVu Sans')
+        ax.set_title("NG Quantity by Facility / Tổng lỗi NG theo nhà máy (pcs)", fontsize=7.5, fontweight='bold', fontname='DejaVu Sans')
+        ax.set_xlabel("Total NG Qty / Tổng số lượng NG (pcs)", fontsize=7, fontname='DejaVu Sans')
         ax.set_ylabel("Facility / Nhà máy", fontsize=7, fontname='DejaVu Sans')
         ax.tick_params(axis='both', labelsize=6.5)
         plt.tight_layout()
@@ -405,7 +403,7 @@ if uploaded_files:
         c2.metric(tr("Defect Rate (%)", "Tỷ lệ lỗi (%)"), round(defect_rate, 2))
         c3.metric(tr("Top Facility", "Nhà máy chính"), top_facility)
         c4.metric(tr("Top Defect", "Lỗi phổ biến"), top_defect)
-        c5.metric(tr("Total NG", "Tổng NG"), int(total_ng))
+        c5.metric(tr("Total NG", "Tổng NG"), f"{int(total_ng):,} pcs")
 
         st.markdown("---")
 
@@ -453,7 +451,7 @@ if uploaded_files:
                     go.Scatter(
                         x=df_trend['COMPLAIN_DATE'],
                         y=df_trend['Total_NG'],
-                        name="NG Qty",
+                        name="NG Qty (pcs)",
                         mode="lines+markers"
                     ),
                     secondary_y=True
@@ -467,7 +465,7 @@ if uploaded_files:
                 )
 
                 fig_trend.update_yaxes(title_text="Complains", secondary_y=False)
-                fig_trend.update_yaxes(title_text="NG Quantity", secondary_y=True)
+                fig_trend.update_yaxes(title_text="NG Quantity (pcs)", secondary_y=True)
                 fig_trend.update_xaxes(title_text="Date")
 
                 st.plotly_chart(fig_trend, use_container_width=True)
@@ -575,11 +573,15 @@ if uploaded_files:
 
                     prompt = f"""
 Analyze the provided QA/QC dataset and metrics. Do not include any introductory remarks, greetings, or meta-commentary. Jump straight into the core findings.
-For every single point, output the English version first, followed immediately by the Vietnamese translation on the next line.
+
+CRITICAL FORMATTING REQUIREMENTS:
+1. Every single point/bullet must start with a bullet point ('- ').
+2. For each point, output the English sentence first, followed immediately by its Vietnamese translation on the very next line (stacked style).
+3. STRICT RULE: Completely replace any mention of "units" or "đơn vị" with "pcs" across all numbers and quantities (e.g., write "3,178 pcs" instead of "3,178 đơn vị" or "3,178 units").
 
 SUMMARY KPI:
 - Complains: {total_complains}
-- NG Qty: {total_ng}
+- NG Qty: {total_ng} pcs
 - Defect Rate: {defect_rate:.2f}%
 - Top Facility: {top_facility}
 - Top Defect: {top_defect}
@@ -604,7 +606,11 @@ DATA EVIDENCE:
                     st.error(f"Lỗi hệ thống: {e}")
 
         if 'response_text' in st.session_state:
-            st.markdown(st.session_state['response_text'])
+            # Hiển thị kết quả phân tích theo dạng các dòng được định dạng rõ ràng
+            for line in st.session_state['response_text'].split('\n'):
+                if line.strip():
+                    st.markdown(line)
+            
             st.markdown("---")
             
             pdf_bytes = generate_pdf_report(
