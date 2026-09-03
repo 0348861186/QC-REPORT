@@ -464,7 +464,7 @@ DATA EVIDENCE:
 """
 
                     response = client.models.generate_content(
-                        model="gemini-3.1pro",
+                        model="gemini-3.1-pro",
                         contents=prompt
                     )
 
