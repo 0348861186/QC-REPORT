@@ -519,5 +519,5 @@ DATA EVIDENCE:
                 mime="application/pdf"
             )
 
-        st.markdown("### 📋 Data Table", "### 📋 Bảng dữ liệu")
+        st.markdown(tr("### 📋 Data Table", "### 📋 Bảng dữ liệu"))
         st.dataframe(df_filtered, use_container_width=True)
