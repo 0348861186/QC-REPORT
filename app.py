@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots  # 👈 THÊM MỚI
+from plotly.subplots import make_subplots
 
 # =========================
 # HELPER: BILINGUAL TEXT
@@ -120,6 +120,84 @@ def load_data(files):
     df['TYPE_OF_DEFECT'] = df['TYPE_OF_DEFECT'].astype(str).str.strip()
 
     return df
+
+# =========================
+# PDF GENERATION HELPER
+# =========================
+def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top_facility, top_defect, ai_text):
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'ReportTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1f77b4'),
+        spaceAfter=12
+    )
+    heading_style = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#333333'),
+        spaceBefore=12,
+        spaceAfter=6
+    )
+    body_style = ParagraphStyle(
+        'ReportBody',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor('#444444')
+    )
+
+    # Title
+    story.append(Paragraph("CUSTOMER COMPLAIN & QA/QC ANALYSIS REPORT", title_style))
+    story.append(Spacer(1, 10))
+
+    # KPI Table
+    kpi_data = [
+        ['Total Complains', str(total_complains), 'Defect Rate (%)', f"{defect_rate:.2f}%"],
+        ['Total NG Qty', str(int(total_ng)), 'Total Order Qty', str(int(total_order))],
+        ['Top Facility', str(top_facility), 'Top Defect', str(top_defect)]
+    ]
+    
+    kpi_table = Table(kpi_data, colWidths=[120, 150, 120, 150])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f5f5f5')),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#333333')),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd'))
+    ]))
+    
+    story.append(kpi_table)
+    story.append(Spacer(1, 15))
+
+    # AI Analysis Section
+    story.append(Paragraph("AI Root Cause & Recommendations", heading_style))
+    story.append(Spacer(1, 6))
+
+    # Format AI text for PDF paragraphs
+    for line in ai_text.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line.replace('**', ''), body_style))
+            story.append(Spacer(1, 4))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 
 # =========================
 # MAIN APP
@@ -380,10 +458,29 @@ DATA FRAME (EVIDENCE):
                         "AI phân tích hoàn tất"
                     ))
 
-                    st.markdown(response.text)
+                    # Lưu kết quả vào session state để dùng cho nút download PDF
+                    st.session_state['ai_response_text'] = response.text
 
                 except Exception as e:
                     st.error(f"Lỗi AI: {e}")
+
+        # Hiển thị kết quả AI và Nút tải PDF nếu đã chạy AI xong
+        if 'ai_response_text' in st.session_state:
+            st.markdown(st.session_state['ai_response_text'])
+            st.markdown("---")
+            
+            # Tạo nút Download PDF
+            pdf_bytes = generate_pdf_report(
+                total_complains, total_ng, total_order, defect_rate, 
+                top_facility, top_defect, st.session_state['ai_response_text']
+            )
+            
+            st.download_button(
+                label=tr("📥 Download PDF Report", "📥 Tải xuống báo cáo PDF"),
+                data=pdf_bytes,
+                file_name="Customer_Complain_Analysis_Report.pdf",
+                mime="application/pdf"
+            )
 
         st.markdown(tr("### 📋 Data Table", "### 📋 Bảng dữ liệu"))
         st.dataframe(df_filtered, use_container_width=True)
