@@ -188,7 +188,6 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     story.append(Paragraph("AI Root Cause & Recommendations", heading_style))
     story.append(Spacer(1, 6))
 
-    # Format AI text for PDF paragraphs
     for line in ai_text.split('\n'):
         if line.strip():
             story.append(Paragraph(line.replace('**', ''), body_style))
@@ -406,7 +405,7 @@ if uploaded_files:
         st.markdown("---")
 
         # =========================
-        # AI SECTION (ENHANCED DATA FRAME)
+        # AI SECTION (GOOGLE GENAI SDK - GEMINI 2.5/3.1 READY)
         # =========================
         st.subheader(tr(
             "🤖 AI Analysis",
@@ -426,7 +425,7 @@ if uploaded_files:
                     sample_data = sample_df.to_markdown(index=False)
 
                     prompt = f"""
-You are a QA/QC expert analyst.
+You are an expert QA/QC analyst.
 ENGLISH:
 - Analyze the dataset and provide root cause insights.
 - Identify patterns in defects and facilities.
@@ -448,6 +447,7 @@ DATA FRAME (EVIDENCE):
 {sample_data}
 """
 
+                    # Sử dụng mô hình mới nhất (Gemini 2.5 Flash / Gemini 3.1 ready)
                     response = client.models.generate_content(
                         model="gemini-2.5-flash",
                         contents=prompt
@@ -458,18 +458,15 @@ DATA FRAME (EVIDENCE):
                         "AI phân tích hoàn tất"
                     ))
 
-                    # Lưu kết quả vào session state để dùng cho nút download PDF
                     st.session_state['ai_response_text'] = response.text
 
                 except Exception as e:
                     st.error(f"Lỗi AI: {e}")
 
-        # Hiển thị kết quả AI và Nút tải PDF nếu đã chạy AI xong
         if 'ai_response_text' in st.session_state:
             st.markdown(st.session_state['ai_response_text'])
             st.markdown("---")
             
-            # Tạo nút Download PDF
             pdf_bytes = generate_pdf_report(
                 total_complains, total_ng, total_order, defect_rate, 
                 top_facility, top_defect, st.session_state['ai_response_text']
