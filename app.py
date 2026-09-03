@@ -6,10 +6,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # =========================
-# HELPER: BILINGUAL TEXT
+# HELPER: BILINGUAL TEXT (STACKED)
 # =========================
 def tr(en, vi):
-    return f"{en}\n{vi}"
+    return f"{en}\n\n{vi}"
 
 # =========================
 # CONFIG
@@ -29,10 +29,10 @@ st.markdown("---")
 # =========================
 # API KEY HANDLING (FIXED + DEBUG)
 # =========================
-st.sidebar.markdown(tr("### 🤖 AI CONFIG", "### 🤖 CẤU HÌNH AI"))
+st.sidebar.markdown(tr("### 🤖 SYSTEM CONFIG", "### 🤖 CẤU HÌNH HỆ THỐNG"))
 
 api_key_sidebar = st.sidebar.text_input(
-    tr("Gemini API Key (optional)", "Gemini API Key (không bắt buộc)"),
+    tr("API Key (optional)", "API Key (không bắt buộc)"),
     type="password",
     help=tr("Enter Google AI Studio API key", "Nhập API key từ Google AI Studio")
 )
@@ -46,7 +46,7 @@ elif api_key_sidebar:
     api_key = api_key_sidebar
     st.sidebar.success("✔ API Key nhập từ sidebar")
 else:
-    st.sidebar.warning("⚠ Chưa có GEMINI_API_KEY")
+    st.sidebar.warning("⚠ Chưa có API_KEY")
 
 st.sidebar.caption(f"Debug API key status: {'OK' if api_key else 'MISSING'}")
 
@@ -122,13 +122,14 @@ def load_data(files):
     return df
 
 # =========================
-# PDF GENERATION HELPER
+# PDF GENERATION HELPER (INCLUDES PLOTLY CHARTS & ANALYSIS)
 # =========================
-def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top_facility, top_defect, ai_text):
+def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top_facility, top_defect, analysis_text, df_filtered):
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
+    import os
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -138,63 +139,85 @@ def generate_pdf_report(total_complains, total_ng, total_order, defect_rate, top
     title_style = ParagraphStyle(
         'ReportTitle',
         parent=styles['Heading1'],
-        fontSize=18,
+        fontSize=16,
         textColor=colors.HexColor('#1f77b4'),
-        spaceAfter=12
+        spaceAfter=10
     )
     heading_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
-        fontSize=14,
+        fontSize=12,
         textColor=colors.HexColor('#333333'),
-        spaceBefore=12,
-        spaceAfter=6
+        spaceBefore=10,
+        spaceAfter=4
     )
     body_style = ParagraphStyle(
         'ReportBody',
         parent=styles['Normal'],
-        fontSize=10,
-        leading=14,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor('#444444')
     )
 
     # Title
     story.append(Paragraph("CUSTOMER COMPLAIN & QA/QC ANALYSIS REPORT", title_style))
-    story.append(Spacer(1, 10))
+    story.append(Paragraph("BÁO CÁO PHÂN TÍCH KHIẾU NẠI KHÁCH HÀNG & QA/QC", body_style))
+    story.append(Spacer(1, 8))
 
     # KPI Table
     kpi_data = [
-        ['Total Complains', str(total_complains), 'Defect Rate (%)', f"{defect_rate:.2f}%"],
-        ['Total NG Qty', str(int(total_ng)), 'Total Order Qty', str(int(total_order))],
-        ['Top Facility', str(top_facility), 'Top Defect', str(top_defect)]
+        ['Total Complains / Tổng KN', str(total_complains), 'Defect Rate / Tỷ lệ lỗi', f"{defect_rate:.2f}%"],
+        ['Total NG / Tổng NG', str(int(total_ng)), 'Total Order / Tổng đặt', str(int(total_order))],
+        ['Top Facility / NM chính', str(top_facility), 'Top Defect / Lỗi phổ biến', str(top_defect)]
     ]
     
-    kpi_table = Table(kpi_data, colWidths=[120, 150, 120, 150])
+    kpi_table = Table(kpi_data, colWidths=[140, 130, 140, 130])
     kpi_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f5f5f5')),
         ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#333333')),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
         ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd'))
     ]))
     
     story.append(kpi_table)
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
 
-    # AI Analysis Section
-    story.append(Paragraph("AI Root Cause & Recommendations", heading_style))
-    story.append(Spacer(1, 6))
+    # Generate Chart Image for PDF
+    chart_path = "temp_chart.png"
+    try:
+        df_trend = df_filtered.groupby(df_filtered['COMPLAIN_DATE'].dt.date).agg(Complains=('WO_NUM', 'count')).reset_index()
+        fig = px.bar(df_trend, x='COMPLAIN_DATE', y='Complains', title="Complains Trend / Xu hướng khiếu nại")
+        fig.update_layout(height=200, width=500, margin=dict(l=20, r=20, t=30, b=20))
+        fig.write_image(chart_path)
+        
+        story.append(Paragraph("Analytics Chart / Biểu đồ phân tích", heading_style))
+        story.append(Image(chart_path, width=450, height=180))
+        story.append(Spacer(1, 10))
+    except Exception:
+        pass # Fallback nếu môi trường thiếu engine ảnh tĩnh của plotly
 
-    for line in ai_text.split('\n'):
+    # Analysis Section
+    story.append(Paragraph("Root Cause & Recommendations / Nguyên nhân gốc rễ & Giải pháp đề xuất", heading_style))
+    story.append(Spacer(1, 4))
+
+    for line in analysis_text.split('\n'):
         if line.strip():
             story.append(Paragraph(line.replace('**', ''), body_style))
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, 3))
 
     doc.build(story)
     buffer.seek(0)
+    
+    if os.path.exists(chart_path):
+        try:
+            os.remove(chart_path)
+        except:
+            pass
+
     return buffer.getvalue()
 
 
@@ -405,17 +428,17 @@ if uploaded_files:
         st.markdown("---")
 
         # =========================
-        # AI SECTION (GOOGLE GENAI SDK - GEMINI 2.5/3.1 READY)
+        # SYSTEM ANALYSIS SECTION
         # =========================
         st.subheader(tr(
-            "🤖 AI Analysis",
-            "🤖 Phân tích AI"
+            "🔍 System Analytics & Insights",
+            "🔍 Phân tích & Thông tin chi tiết từ hệ thống"
         ))
 
-        if st.button(tr("Run AI Analysis", "Chạy phân tích AI")):
+        if st.button(tr("Run Analysis", "Chạy phân tích")):
 
             if not api_key:
-                st.error("❌ Chưa có GEMINI_API_KEY")
+                st.error("❌ Chưa có API_KEY")
             else:
                 try:
                     from google import genai
@@ -424,17 +447,10 @@ if uploaded_files:
                     sample_df = df_filtered.head(120)
                     sample_data = sample_df.to_markdown(index=False)
 
+                    # Prompt không chứa lời dẫn mở đầu, yêu cầu trả cấu trúc song ngữ trực tiếp từng dòng/đoạn
                     prompt = f"""
-You are an expert QA/QC analyst.
-ENGLISH:
-- Analyze the dataset and provide root cause insights.
-- Identify patterns in defects and facilities.
-- Suggest improvement actions.
-
-VIETNAMESE:
-- Phân tích dữ liệu QA/QC.
-- Xác định nguyên nhân lỗi và xu hướng.
-- Đề xuất giải pháp cải tiến.
+Analyze the provided QA/QC dataset and metrics. Do not include any introductory remarks, greetings, or meta-commentary. Jump straight into the core findings.
+For every single point, output the English version first, followed immediately by the Vietnamese translation on the next line.
 
 SUMMARY KPI:
 - Complains: {total_complains}
@@ -443,33 +459,32 @@ SUMMARY KPI:
 - Top Facility: {top_facility}
 - Top Defect: {top_defect}
 
-DATA FRAME (EVIDENCE):
+DATA EVIDENCE:
 {sample_data}
 """
 
-                    # Sử dụng mô hình mới nhất (Gemini 2.5 Flash / Gemini 3.1 ready)
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-3.1-pro-preview",
                         contents=prompt
                     )
 
                     st.success(tr(
-                        "AI analysis completed",
-                        "AI phân tích hoàn tất"
+                        "Analysis completed successfully",
+                        "Phân tích hoàn tất thành công"
                     ))
 
-                    st.session_state['ai_response_text'] = response.text
+                    st.session_state['response_text'] = response.text
 
                 except Exception as e:
-                    st.error(f"Lỗi AI: {e}")
+                    st.error(f"Lỗi hệ thống: {e}")
 
-        if 'ai_response_text' in st.session_state:
-            st.markdown(st.session_state['ai_response_text'])
+        if 'response_text' in st.session_state:
+            st.markdown(st.session_state['response_text'])
             st.markdown("---")
             
             pdf_bytes = generate_pdf_report(
                 total_complains, total_ng, total_order, defect_rate, 
-                top_facility, top_defect, st.session_state['ai_response_text']
+                top_facility, top_defect, st.session_state['response_text'], df_filtered
             )
             
             st.download_button(
